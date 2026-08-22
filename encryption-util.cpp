@@ -198,11 +198,12 @@ void helpCommand() {
    printf("Commands:\n");
    printf("\t-h                       show help.\n");
    printf("\t-m  [file]               reset password.\n");
-   printf("\t-v  [file]               view.\n");
-   printf("\t-e  [file]               edit.\n");
-   printf("\t-i  [file]               insert.\n");
-   printf("\t-d  [file]               delete.\n");
-   printf("\t-a  [file]               append.\n");
+   printf("\t-v  [file]               view file.\n");
+   printf("\t-e  [file]               edit file.\n");
+   printf("\t-i  [file]               insert into file.\n");
+   printf("\t-d  [file]               delete from file.\n");
+   printf("\t-a  [file]               append to file.\n");
+   printf("\t-r  [file]               remove file/directories.\n");
    printf("\t-ea [in1,in2,...] [out]  combine files/directories into an encrypted archive.\n");
    printf("\t-da [in] [out]           decrypt an archive.\n");
    printf("Args:\n");
@@ -262,7 +263,7 @@ void insertIntoFile(std::string &plainText, std::string &filename, unsigned char
    saveLines(lines, key, filename, salt);
 }
 
-void deleteFile(std::string &plainText, std::string &filename, unsigned char *salt, unsigned char *key) {
+void deleteLinesFromFile(std::string &plainText, std::string &filename, unsigned char *salt, unsigned char *key) {
    std::vector<std::string> lines = split(plainText, '\n');
    while (true) {
       printLines(lines);
@@ -287,6 +288,18 @@ void addToFile(std::string &plainText, std::string &filename, unsigned char *sal
       sodium_memzero(&secret[0], secret.size());
    }
    saveVault(key, plainText, filename, salt);
+}
+
+void removeFiles(int argc, char *argv[]) {
+   for (int i = 1; i < argc - 1; ++i) {
+      std::string path = argv[i];
+      if (std::filesystem::exists(path)) {
+         std::filesystem::remove_all(path);
+      }
+      if (!silentMode) printf("Deleting %s.\n", path.c_str());
+      sodium_memzero(&path[0], path.size());
+   }
+   if (!silentMode) printf("Deletion done.\n");
 }
 
 void encryptArchive(int argc, char *argv[]) {
@@ -397,6 +410,11 @@ int main(int argc, char *argv[]) {
       return EXIT_SUCCESS;
    }
 
+   if (strcmp(argv[0], "-r") == 0 && argc > 1) {
+      removeFiles(argc, argv);
+      return EXIT_SUCCESS;
+   }
+
    unsigned char salt[saltLength];
    unsigned char key[keyLength];
 
@@ -432,7 +450,7 @@ int main(int argc, char *argv[]) {
       insertIntoFile(plainText, filename, salt, key);
    }
    else if (strcmp(argv[0], "-d") == 0 && argc == 2) {
-      deleteFile(plainText, filename, salt, key);
+      deleteLinesFromFile(plainText, filename, salt, key);
    }
    else if (strcmp(argv[0], "-a") == 0 && argc == 2) {
       addToFile(plainText, filename, salt, key);
