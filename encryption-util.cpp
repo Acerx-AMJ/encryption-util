@@ -8,6 +8,7 @@
 
 constexpr size_t keyLength = crypto_aead_xchacha20poly1305_ietf_KEYBYTES;
 constexpr size_t saltLength = crypto_pwhash_SALTBYTES;
+static bool silentMode = false;
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -130,6 +131,7 @@ void saveVault(const unsigned char *key, const std::string &plaintext, const std
    std::ofstream pf(filename, std::ios::binary | std::ios::trunc);
    pf.write(reinterpret_cast<const char*>(salt), saltLength);
    pf.write(reinterpret_cast<char*>(out.data()), out.size());
+   if (!silentMode) printf("Wrote to %s\n", filename.c_str());
 }
 
 void printLines(const std::vector<std::string> &lines) {
@@ -164,6 +166,7 @@ bool readU64(const std::string &in, size_t &pos, uint64_t &out) {
 }
 
 void appendFile(std::string &plainText, std::string &path, std::ifstream &stream) {
+   if (!silentMode) printf("Encrypting %s...\n", path.c_str());
    std::string contents {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
    plainText.reserve(plainText.size() + path.size() + contents.size() + sizeof(uint64_t) * 2);
    appendU64(plainText, path.size());
@@ -191,8 +194,8 @@ std::vector<unsigned char> readEncryptedFile(unsigned char *salt, std::ifstream 
 
 void helpCommand() {
    printf("password-manager\n");
-   printf("Usage:\n\t./password-manager [ARG]\n");
-   printf("Args:\n");
+   printf("Usage:\n\t./password-manager [args] [command]\n");
+   printf("Commands:\n");
    printf("\t-h                       show help.\n");
    printf("\t-m  [file]               reset password.\n");
    printf("\t-v  [file]               view.\n");
@@ -202,6 +205,8 @@ void helpCommand() {
    printf("\t-a  [file]               append.\n");
    printf("\t-ea [in1,in2,...] [out]  combine files/directories into an encrypted archive.\n");
    printf("\t-da [in] [out]           decrypt an archive.\n");
+   printf("Args:\n");
+   printf("\t-s                       silent mode.\n");
 }
 
 void resetPassword(std::string &plainText, std::string &filename) {
@@ -292,7 +297,7 @@ void encryptArchive(int argc, char *argv[]) {
    randombytes_buf(salt, saltLength);
    deriveKey(pass, salt, key);
    std::string plainText;
-   for (int i = 2; i < argc - 1; ++i) {
+   for (int i = 1; i < argc - 1; ++i) {
       std::string path = argv[i];
       if (!std::filesystem::exists(path)) {
          printf("File '%s' does not exist.\n", path.c_str());
@@ -315,11 +320,11 @@ void encryptArchive(int argc, char *argv[]) {
    saveVault(key, plainText, argv[argc-1], salt);
    sodium_memzero(&plainText[0], plainText.size());
    sodium_memzero(key, keyLength);
-   printf("Archive encryption complete.\n");
+   if (!silentMode) printf("Archive encryption complete.\n");
 }
 
 void decryptArchive(int argc, char *argv[]) {
-   std::ifstream stream = openFile(argv[2]);
+   std::ifstream stream = openFile(argv[1]);
    unsigned char salt[saltLength];
    unsigned char key[keyLength];
    std::vector<unsigned char> blob = readEncryptedFile(salt, stream);
@@ -327,7 +332,6 @@ void decryptArchive(int argc, char *argv[]) {
    std::string masterPassword = readHiddenLine("Input password: ");
    deriveKey(masterPassword, salt, key);
    decryptBlob(key, blob, plainText);
-   printf("Decrypting archive...\n");
    size_t pos = 0;
    while (pos < plainText.size()) {
       uint64_t nameLen;
@@ -347,7 +351,9 @@ void decryptArchive(int argc, char *argv[]) {
          exit(EXIT_FAILURE);
       }
 
-      std::filesystem::path outPath = std::filesystem::path(argv[3]) / rel;
+      std::filesystem::path outPath = std::filesystem::path(argv[2]) / rel;
+      if (!silentMode) printf("Decrypting %s...\n", outPath.string().c_str());
+
       std::filesystem::create_directories(outPath.parent_path());
       std::ofstream out(outPath, std::ios::binary | std::ios::trunc);
       out.write(plainText.data() + pos, dataLen);
@@ -356,11 +362,22 @@ void decryptArchive(int argc, char *argv[]) {
    }
    sodium_memzero(&plainText[0], plainText.size());
    sodium_memzero(key, keyLength);
-   printf("Archive decryption complete.\n");
+   if (!silentMode) printf("Archive decryption complete.\n");
 }
 
 int main(int argc, char *argv[]) {
-   if (argc < 3 || (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))) {
+   for (int i = 1; i < argc; ++i) {
+      if (strcmp(argv[i], "-s") == 0) {
+         silentMode = true;
+      }
+      else {
+         argv = &argv[i];
+         argc -= i;
+         break;
+      }
+   }
+
+   if (argc < 2 || (argc > 0 && (strcmp(argv[0], "-h") == 0 || strcmp(argv[0], "--help") == 0))) {
       helpCommand();
       return EXIT_SUCCESS;
    }
@@ -370,12 +387,12 @@ int main(int argc, char *argv[]) {
       return EXIT_FAILURE;
    }
 
-   if (strcmp(argv[1], "-ea") == 0 && argc > 3) {
+   if (strcmp(argv[0], "-ea") == 0 && argc > 2) {
       encryptArchive(argc, argv);
       return EXIT_SUCCESS;
    }
 
-   if (strcmp(argv[1], "-da") == 0 && argc == 4) {
+   if (strcmp(argv[0], "-da") == 0 && argc == 3) {
       decryptArchive(argc, argv);
       return EXIT_SUCCESS;
    }
@@ -383,7 +400,7 @@ int main(int argc, char *argv[]) {
    unsigned char salt[saltLength];
    unsigned char key[keyLength];
 
-   std::string filename = argv[2];
+   std::string filename = argv[1];
    std::string plainText;
    bool freshVault = !std::filesystem::exists(filename);
 
@@ -402,22 +419,22 @@ int main(int argc, char *argv[]) {
       decryptBlob(key, blob, plainText);
    }
 
-   if (strcmp(argv[1], "-m") == 0 && argc == 3 && !freshVault) {
+   if (strcmp(argv[0], "-m") == 0 && argc == 2 && !freshVault) {
       resetPassword(plainText, filename);
    }
-   else if (strcmp(argv[1], "-v") == 0 && argc == 3) {
+   else if (strcmp(argv[0], "-v") == 0 && argc == 2) {
       viewFile(plainText);
    }
-   else if (strcmp(argv[1], "-e") == 0 && argc == 3) {
+   else if (strcmp(argv[0], "-e") == 0 && argc == 2) {
       editFile(plainText, filename, salt, key);
    }
-   else if (strcmp(argv[1], "-i") == 0 && argc == 3) {
+   else if (strcmp(argv[0], "-i") == 0 && argc == 2) {
       insertIntoFile(plainText, filename, salt, key);
    }
-   else if (strcmp(argv[1], "-d") == 0 && argc == 3) {
+   else if (strcmp(argv[0], "-d") == 0 && argc == 2) {
       deleteFile(plainText, filename, salt, key);
    }
-   else if (strcmp(argv[1], "-a") == 0 && argc == 3) {
+   else if (strcmp(argv[0], "-a") == 0 && argc == 2) {
       addToFile(plainText, filename, salt, key);
    }
    else {
