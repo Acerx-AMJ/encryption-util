@@ -1,5 +1,6 @@
 #include "sodium.h" // IWYU pragma: export
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <fstream>
@@ -9,6 +10,25 @@
 constexpr size_t keyLength = crypto_aead_xchacha20poly1305_ietf_KEYBYTES;
 constexpr size_t saltLength = crypto_pwhash_SALTBYTES;
 static bool silentMode = false;
+
+constexpr size_t abbreviationCount = 6;
+constexpr const char *abbreviations[abbreviationCount] {"B", "KB", "MB", "GB", "TB", "PB"};
+
+int digitCount(uint64_t num) {
+   return num == 0 ? 1 : std::floor(std::log10(num)) + 1;
+}
+
+void printByteSize(uint64_t bytes) {
+   int digits = digitCount(bytes);
+   int groups = std::floor((digits - 1) / 3);
+   if (groups == 0) {
+      printf("(%llu%s).\n", bytes, abbreviations[0]);
+      return;
+   }
+   if (groups >= abbreviationCount) groups = abbreviationCount - 1;
+   float number = std::round((float)bytes) / std::pow(1000, groups);
+   printf("(%.2f%s).\n", std::round(number * 100.0f) / 100.0f, abbreviations[groups]);
+}
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -193,21 +213,22 @@ std::vector<unsigned char> readEncryptedFile(unsigned char *salt, std::ifstream 
 }
 
 void helpCommand() {
-   printf("password-manager\n");
-   printf("Usage:\n\t./password-manager [args] [command]\n");
+   printf("encryption-util\n");
+   printf("Usage:\n\t./encryption-util [args] [command]\n");
    printf("Commands:\n");
-   printf("\t-h                       show help.\n");
-   printf("\t-m  [file]               reset password.\n");
-   printf("\t-v  [file]               view file.\n");
-   printf("\t-e  [file]               edit file.\n");
-   printf("\t-i  [file]               insert into file.\n");
-   printf("\t-d  [file]               delete from file.\n");
-   printf("\t-a  [file]               append to file.\n");
-   printf("\t-r  [file]               remove file/directories.\n");
-   printf("\t-ea [in1,in2,...] [out]  combine files/directories into an encrypted archive.\n");
-   printf("\t-da [in] [out]           decrypt an archive.\n");
+   printf("\t--help -h                                   show help.\n");
+   printf("\t--reset-password -m    [file]               reset password.\n");
+   printf("\t--view -v              [file]               view file.\n");
+   printf("\t--edit -e              [file]               edit file.\n");
+   printf("\t--insert -i            [file]               insert into file.\n");
+   printf("\t--delete-from -d       [file]               delete from file.\n");
+   printf("\t--append -a            [file]               append to file.\n");
+   printf("\t--remove -r            [file]               remove file/directories.\n");
+   printf("\t--encrypt-archive -ea  [in1,in2,...] [out]  combine files/directories into an encrypted archive.\n");
+   printf("\t--decrypt-archive -da  [in] [out]           decrypt an archive.\n");
+   printf("\t--list-archive -la     [archive]            list contents of an archive.\n");
    printf("Args:\n");
-   printf("\t-s                       silent mode.\n");
+   printf("\t-s                                          silent mode.\n");
 }
 
 void resetPassword(std::string &plainText, std::string &filename) {
@@ -378,6 +399,49 @@ void decryptArchive(int argc, char *argv[]) {
    if (!silentMode) printf("Archive decryption complete.\n");
 }
 
+void listArchive(int argc, char *argv[]) {
+   std::ifstream stream = openFile(argv[1]);
+   unsigned char salt[saltLength];
+   unsigned char key[keyLength];
+   std::vector<unsigned char> blob = readEncryptedFile(salt, stream);
+   std::string plainText;
+   std::string masterPassword = readHiddenLine("Input password: ");
+   deriveKey(masterPassword, salt, key);
+   decryptBlob(key, blob, plainText);
+   size_t pos = 0;
+   size_t count = 0;
+   uint64_t totalDataLen = 0;
+   while (pos < plainText.size()) {
+      uint64_t nameLen;
+      if (!readU64(plainText, pos, nameLen) || pos + nameLen > plainText.size()) {
+         printf("Corrupted archive (bad path entry).\n");
+         sodium_memzero(&plainText[0], plainText.size());
+         exit(EXIT_FAILURE);
+      }
+      std::string rel = plainText.substr(pos, nameLen);
+      pos += nameLen;
+
+      uint64_t dataLen;
+      if (!readU64(plainText, pos, dataLen) || pos + dataLen > plainText.size()) {
+         printf("Corrupted archive (bad data entry).\n");
+         sodium_memzero(&rel[0], rel.size());
+         sodium_memzero(&plainText[0], plainText.size());
+         exit(EXIT_FAILURE);
+      }
+      pos += dataLen;
+      totalDataLen += dataLen;
+      count += 1;
+      printf("%s ", rel.c_str());
+      printByteSize(dataLen);
+      sodium_memzero(&rel[0], rel.size());
+   }
+   sodium_memzero(&plainText[0], plainText.size());
+   sodium_memzero(key, keyLength);
+   printf("Showing %llu archive entries.\n", count);
+   printf("Total size: ");
+   printByteSize(totalDataLen);
+}
+
 int main(int argc, char *argv[]) {
    for (int i = 1; i < argc; ++i) {
       if (strcmp(argv[i], "-s") == 0) {
@@ -400,18 +464,23 @@ int main(int argc, char *argv[]) {
       return EXIT_FAILURE;
    }
 
-   if (strcmp(argv[0], "-ea") == 0 && argc > 2) {
+   if ((strcmp(argv[0], "-r") == 0 || strcmp(argv[0], "--remove") == 0) && argc > 1) {
+      removeFiles(argc, argv);
+      return EXIT_SUCCESS;
+   }
+
+   if ((strcmp(argv[0], "-ea") == 0 || strcmp(argv[0], "--encrypt-archive") == 0) && argc > 2) {
       encryptArchive(argc, argv);
       return EXIT_SUCCESS;
    }
 
-   if (strcmp(argv[0], "-da") == 0 && argc == 3) {
+   if ((strcmp(argv[0], "-da") == 0 || strcmp(argv[0], "--decrypt-archive") == 0) && argc == 3) {
       decryptArchive(argc, argv);
       return EXIT_SUCCESS;
    }
 
-   if (strcmp(argv[0], "-r") == 0 && argc > 1) {
-      removeFiles(argc, argv);
+   if ((strcmp(argv[0], "-la") == 0 || strcmp(argv[0], "--list-archive") == 0) && argc == 2) {
+      listArchive(argc, argv);
       return EXIT_SUCCESS;
    }
 
@@ -437,22 +506,22 @@ int main(int argc, char *argv[]) {
       decryptBlob(key, blob, plainText);
    }
 
-   if (strcmp(argv[0], "-m") == 0 && argc == 2 && !freshVault) {
+   if ((strcmp(argv[0], "-m") == 0 || strcmp(argv[0], "--reset-password") == 0) && argc == 2 && !freshVault) {
       resetPassword(plainText, filename);
    }
-   else if (strcmp(argv[0], "-v") == 0 && argc == 2) {
+   else if ((strcmp(argv[0], "-v") == 0 || strcmp(argv[0], "--view") == 0) && argc == 2) {
       viewFile(plainText);
    }
-   else if (strcmp(argv[0], "-e") == 0 && argc == 2) {
+   else if ((strcmp(argv[0], "-e") == 0 || strcmp(argv[0], "--edit") == 0) && argc == 2) {
       editFile(plainText, filename, salt, key);
    }
-   else if (strcmp(argv[0], "-i") == 0 && argc == 2) {
+   else if ((strcmp(argv[0], "-i") == 0 || strcmp(argv[0], "--insert") == 0) && argc == 2) {
       insertIntoFile(plainText, filename, salt, key);
    }
-   else if (strcmp(argv[0], "-d") == 0 && argc == 2) {
+   else if ((strcmp(argv[0], "-d") == 0 || strcmp(argv[0], "--delete-from") == 0) && argc == 2) {
       deleteLinesFromFile(plainText, filename, salt, key);
    }
-   else if (strcmp(argv[0], "-a") == 0 && argc == 2) {
+   else if ((strcmp(argv[0], "-a") == 0 || strcmp(argv[0], "--append") == 0) && argc == 2) {
       addToFile(plainText, filename, salt, key);
    }
    else {
