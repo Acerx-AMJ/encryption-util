@@ -226,6 +226,7 @@ void helpCommand() {
    printf("\t--remove -r            [file]               remove file/directories.\n");
    printf("\t--encrypt-archive -ea  [in1,in2,...] [out]  combine files/directories into an encrypted archive.\n");
    printf("\t--decrypt-archive -da  [in] [out]           decrypt an archive.\n");
+   printf("\t--insert-archive -ia   [in1,in2...] [out]   insert files/directories into an existing archive.\n");
    printf("\t--list-archive -la     [archive]            list contents of an archive.\n");
    printf("Args:\n");
    printf("\t-s                                          silent mode.\n");
@@ -312,7 +313,7 @@ void addToFile(std::string &plainText, std::string &filename, unsigned char *sal
 }
 
 void removeFiles(int argc, char *argv[]) {
-   for (int i = 1; i < argc - 1; ++i) {
+   for (int i = 1; i < argc; ++i) {
       std::string path = argv[i];
       if (std::filesystem::exists(path)) {
          std::filesystem::remove_all(path);
@@ -399,6 +400,41 @@ void decryptArchive(int argc, char *argv[]) {
    if (!silentMode) printf("Archive decryption complete.\n");
 }
 
+void insertArchive(int argc, char *argv[]) {
+   std::ifstream stream = openFile(argv[argc-1]);
+   unsigned char salt[saltLength];
+   unsigned char key[keyLength];
+   std::vector<unsigned char> blob = readEncryptedFile(salt, stream);
+   std::string plainText;
+   std::string masterPassword = readHiddenLine("Input password: ");
+   deriveKey(masterPassword, salt, key);
+   decryptBlob(key, blob, plainText);
+   for (int i = 1; i < argc - 1; ++i) {
+      std::string path = argv[i];
+      if (!std::filesystem::exists(path)) {
+         printf("File '%s' does not exist.\n", path.c_str());
+         exit(EXIT_FAILURE);
+      }
+      if (std::filesystem::is_directory(path)) {
+         for (const auto &file: std::filesystem::recursive_directory_iterator(path)) {
+            if (!file.is_regular_file()) continue;
+            std::string path = file.path().string();
+            std::ifstream stream = openFile(path);
+            appendFile(plainText, path, stream);
+         }
+      }
+      else if (std::filesystem::is_regular_file(path)) {
+         std::ifstream stream = openFile(path);
+         appendFile(plainText, path, stream);
+      }
+      sodium_memzero(&path[0], path.size());
+   }
+   saveVault(key, plainText, argv[argc-1], salt);
+   sodium_memzero(&plainText[0], plainText.size());
+   sodium_memzero(key, keyLength);
+   if (!silentMode) printf("Archive encryption complete.\n");
+}
+
 void listArchive(int argc, char *argv[]) {
    std::ifstream stream = openFile(argv[1]);
    unsigned char salt[saltLength];
@@ -471,6 +507,11 @@ int main(int argc, char *argv[]) {
 
    if ((strcmp(argv[0], "-ea") == 0 || strcmp(argv[0], "--encrypt-archive") == 0) && argc > 2) {
       encryptArchive(argc, argv);
+      return EXIT_SUCCESS;
+   }
+
+   if ((strcmp(argv[0], "-ia") == 0 || strcmp(argv[0], "--insert-archive") == 0) && argc > 2) {
+      insertArchive(argc, argv);
       return EXIT_SUCCESS;
    }
 
