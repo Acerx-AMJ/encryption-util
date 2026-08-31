@@ -4,6 +4,8 @@
 /lib/
 /sodium/
 /sodium.h
+/*.encrypted
+/*.password
 /*.exe
 /build.bat
 /.cache/

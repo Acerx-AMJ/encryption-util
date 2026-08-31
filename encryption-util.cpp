@@ -504,23 +504,19 @@ int main(int argc, char *argv[]) {
       removeFiles(argc, argv);
       return EXIT_SUCCESS;
    }
-
-   if ((strcmp(argv[0], "-ea") == 0 || strcmp(argv[0], "--encrypt-archive") == 0) && argc > 2) {
+   else if ((strcmp(argv[0], "-ea") == 0 || strcmp(argv[0], "--encrypt-archive") == 0) && argc > 2) {
       encryptArchive(argc, argv);
       return EXIT_SUCCESS;
    }
-
-   if ((strcmp(argv[0], "-ia") == 0 || strcmp(argv[0], "--insert-archive") == 0) && argc > 2) {
+   else if ((strcmp(argv[0], "-ia") == 0 || strcmp(argv[0], "--insert-archive") == 0) && argc > 2) {
       insertArchive(argc, argv);
       return EXIT_SUCCESS;
    }
-
-   if ((strcmp(argv[0], "-da") == 0 || strcmp(argv[0], "--decrypt-archive") == 0) && argc == 3) {
+   else if ((strcmp(argv[0], "-da") == 0 || strcmp(argv[0], "--decrypt-archive") == 0) && argc == 3) {
       decryptArchive(argc, argv);
       return EXIT_SUCCESS;
    }
-
-   if ((strcmp(argv[0], "-la") == 0 || strcmp(argv[0], "--list-archive") == 0) && argc == 2) {
+   else if ((strcmp(argv[0], "-la") == 0 || strcmp(argv[0], "--list-archive") == 0) && argc == 2) {
       listArchive(argc, argv);
       return EXIT_SUCCESS;
    }
