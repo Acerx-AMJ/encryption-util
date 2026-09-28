@@ -22,7 +22,7 @@ void printByteSize(uint64_t bytes) {
    int digits = digitCount(bytes);
    int groups = std::floor((digits - 1) / 3);
    if (groups == 0) {
-      printf("(%llu%s).\n", bytes, abbreviations[0]);
+      printf("(%zu%s).\n", bytes, abbreviations[0]);
       return;
    }
    if (groups >= abbreviationCount) groups = abbreviationCount - 1;
@@ -157,7 +157,7 @@ void saveVault(const unsigned char *key, const std::string &plaintext, const std
 void printLines(const std::vector<std::string> &lines) {
    size_t i = 0;
    for (const std::string &line: lines) {
-      printf("%5llu: %s\n", ++i, line.c_str());
+      printf("%5zu: %s\n", ++i, line.c_str());
    }
 }
 
@@ -252,7 +252,7 @@ void editFile(std::string &plainText, std::string &filename, unsigned char *salt
    std::vector<std::string> lines = split(plainText, '\n');
    while (true) {
       printLines(lines);
-      printf("\nSelect line to edit (%d-%llu or \"quit\" to quit): ", 1, lines.size());
+      printf("\nSelect line to edit (%d-%zu or \"quit\" to quit): ", 1, lines.size());
       int i = 0;
       std::cin >> i;
       if (i <= 0 || i - 1 >= lines.size() || std::cin.fail()) break;
@@ -271,7 +271,7 @@ void insertIntoFile(std::string &plainText, std::string &filename, unsigned char
    std::vector<std::string> lines = split(plainText, '\n');
    while (true) {
       printLines(lines);
-      printf("\nIndex to insert in (0-start, 1-after first line, %llu-end or \"quit\" to quit): ", lines.size());
+      printf("\nIndex to insert in (0-start, 1-after first line, %zu-end or \"quit\" to quit): ", lines.size());
       int i = 0;
       std::cin >> i;
       if (i < 0 || i >= lines.size() || std::cin.fail()) break;
@@ -289,7 +289,7 @@ void deleteLinesFromFile(std::string &plainText, std::string &filename, unsigned
    std::vector<std::string> lines = split(plainText, '\n');
    while (true) {
       printLines(lines);
-      printf("\nSelect line to delete (%d-%llu or \"quit\" to quit): ", 1, lines.size());
+      printf("\nSelect line to delete (%d-%zu or \"quit\" to quit): ", 1, lines.size());
       int i = 0;
       std::cin >> i;
       if (i <= 0 || i - 1 >= lines.size() || std::cin.fail()) break;
@@ -473,7 +473,7 @@ void listArchive(int argc, char *argv[]) {
    }
    sodium_memzero(&plainText[0], plainText.size());
    sodium_memzero(key, keyLength);
-   printf("Showing %llu archive entries.\n", count);
+   printf("Showing %zu archive entries.\n", count);
    printf("Total size: ");
    printByteSize(totalDataLen);
 }
