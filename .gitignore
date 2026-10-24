@@ -1,6 +1,3 @@
-*
-!/**/
-!*.*
 /lib/
 /sodium/
 /sodium.h
@@ -11,3 +8,6 @@
 /.cache/
 /.vs/
 /.vscode/
+/util
+/encryption-util
+/p
